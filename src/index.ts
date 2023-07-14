@@ -1,5 +1,5 @@
-import { ApolloServer } from '@apollo/server';
-import { startStandaloneServer } from '@apollo/server/standalone';
+import {ApolloServer} from '@apollo/server';
+import {startStandaloneServer} from '@apollo/server/standalone';
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
@@ -9,7 +9,7 @@ const typeDefs = `#graphql
 
 type GeoLocation {
     lat: String,
-    long: String, 
+    long: String,
 }
 
 scalar Date
@@ -31,14 +31,13 @@ type Article {
 
 type Query {
     articles: [Article]
+    article(id: ID!): Article
 }
 `;
 
 const articles = [
     {
-        "_id": {
-            "$oid": "64a50ab05f5002251c01517a"
-        },
+        "id": "64a50ab05f5002251c01517a",
         "href": "/s-anzeige/regentonne-regentonnen-mit-fuss/2484233637-89-19878",
         "location": "15711 Königs Wusterhausen",
         "locationGeocoded": {
@@ -51,9 +50,7 @@ const articles = [
         "title": "Regentonne-Regentonnen mit Fuß"
     },
     {
-        "_id": {
-            "$oid": "64a50ab15f5002251c01517d"
-        },
+        "id": "64a50ab15f5002251c01517d",
         "href": "/s-anzeige/weinfass-eichenfass-wasserfass-regenfass-regentonne-wassertonne/2460093731-87-6058",
         "location": "83533 Edling",
         "locationGeocoded": {
@@ -68,16 +65,17 @@ const articles = [
 ];
 
 
-
 // Resolvers define how to fetch the types defined in your schema.
 // This resolver retrieves books from the "books" array above.
 const resolvers = {
     Query: {
         articles: () => articles,
+        article: (parent, args) => {
+            console.log(`ID param: ${args.id}`)
+            articles.filter( it => it.id === args.id).shift()
+        },
     },
 };
-
-
 
 
 // The ApolloServer constructor requires two parameters: your schema
@@ -91,8 +89,8 @@ const server = new ApolloServer({
 //  1. creates an Express app
 //  2. installs your ApolloServer instance as middleware
 //  3. prepares your app to handle incoming requests
-const { url } = await startStandaloneServer(server, {
-    listen: { port: 4000 },
+const {url} = await startStandaloneServer(server, {
+    listen: {port: 4000},
 });
 
 console.log(`🚀  Server ready at: ${url}`);
