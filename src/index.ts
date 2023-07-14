@@ -72,7 +72,7 @@ const resolvers = {
         articles: () => articles,
         article: (parent, args) => {
             console.log(`ID param: ${args.id}`)
-            articles.filter( it => it.id === args.id).shift()
+            return articles.filter( it => it.id === args.id).shift()
         },
     },
 };
