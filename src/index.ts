@@ -7,31 +7,63 @@ import { startStandaloneServer } from '@apollo/server/standalone';
 const typeDefs = `#graphql
 # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
 
-# This "Book" type defines the queryable fields for every book in our data source.
-type Book {
-    title: String
-    author: String
+type GeoLocation {
+    lat: String,
+    long: String, 
 }
 
-# The "Query" type is special: it lists all of the available queries that
-# clients can execute, along with the return type for each. In this
-# case, the "books" query returns an array of zero or more Books (defined above).
+scalar Date
+
+# This "Book" type defines the queryable fields for every book in our data source.
+type Article {
+    href: String,
+    title: String,
+    id: ID!,
+    price: Int,
+    location: String,
+    isShipping: String,
+    locationGeocoded: GeoLocation,
+    notes: String,
+    isFavorite: Boolean,
+    isIgnored: Boolean,
+    createdOn: Date,
+}
+
 type Query {
-    books: [Book]
+    articles: [Article]
 }
 `;
 
-
-
-
-const books = [
+const articles = [
     {
-        title: 'The Awakening',
-        author: 'Kate Chopin',
+        "_id": {
+            "$oid": "64a50ab05f5002251c01517a"
+        },
+        "href": "/s-anzeige/regentonne-regentonnen-mit-fuss/2484233637-89-19878",
+        "location": "15711 Königs Wusterhausen",
+        "locationGeocoded": {
+            "latitude": 52.2869576,
+            "longitude": 13.6148679,
+        },
+        "price": 30,
+        "isFavorite": false,
+        "isShipping": false,
+        "title": "Regentonne-Regentonnen mit Fuß"
     },
     {
-        title: 'City of Glass',
-        author: 'Paul Auster',
+        "_id": {
+            "$oid": "64a50ab15f5002251c01517d"
+        },
+        "href": "/s-anzeige/weinfass-eichenfass-wasserfass-regenfass-regentonne-wassertonne/2460093731-87-6058",
+        "location": "83533 Edling",
+        "locationGeocoded": {
+            "latitude": 48.0575364,
+            "longitude": 12.1589951,
+        },
+        "price": 200,
+        "isShipping": false,
+        "isFavorite": true,
+        "title": "Weinfass Eichenfass Wasserfass Regenfass Regentonne Wassertonne"
     },
 ];
 
@@ -41,7 +73,7 @@ const books = [
 // This resolver retrieves books from the "books" array above.
 const resolvers = {
     Query: {
-        books: () => books,
+        articles: () => articles,
     },
 };
 
