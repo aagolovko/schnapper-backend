@@ -1,5 +1,6 @@
 import {ApolloServer} from '@apollo/server';
 import {startStandaloneServer} from '@apollo/server/standalone';
+import {Context} from "vm";
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
@@ -32,8 +33,23 @@ type Article {
 type Query {
     articles: [Article]
     article(id: ID!): Article
+
 }
+
+input ArticleUpdate {
+    isFavorite: Boolean,
+}
+
+# TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
+type Mutation {
+    updateArticle(id: ID!, article: ArticleUpdate): Article
+}
+
 `;
+
+interface ArticleUpdate {
+    isFavorite: boolean,
+}
 
 const articles = [
     {
@@ -59,7 +75,7 @@ const articles = [
         },
         "price": 200,
         "isShipping": false,
-        "isFavorite": true,
+        "isFavorite": false,
         "title": "Weinfass Eichenfass Wasserfass Regenfass Regentonne Wassertonne"
     },
 ];
@@ -72,9 +88,17 @@ const resolvers = {
         articles: () => articles,
         article: (parent, args) => {
             console.log(`ID param: ${args.id}`)
-            return articles.filter( it => it.id === args.id).shift()
+            return articles.filter(it => it.id === args.id).shift()
         },
     },
+    Mutation: {
+        // parent, args
+        updateArticle: (parent, args) => {
+            console.log(`Updating: ${args.id} ${JSON.stringify(args.article)}`)
+            return articles.filter(it => it.id === args.id).shift()
+        }
+
+    }
 };
 
 
