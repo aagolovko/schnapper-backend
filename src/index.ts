@@ -1,50 +1,50 @@
 import {ApolloServer} from '@apollo/server';
 import {startStandaloneServer} from '@apollo/server/standalone';
-import {Context} from "vm";
+import {connectToDatabase, collections} from "./services/database.service.ts";
+import {Article} from "./models/article";
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
 // your data.
 const typeDefs = `#graphql
-# Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
-
-type GeoLocation {
-    lat: String,
-    long: String,
-}
-
-scalar Date
-
-# This "Book" type defines the queryable fields for every book in our data source.
-type Article {
-    href: String,
-    title: String,
-    id: ID!,
-    price: Int,
-    location: String,
-    isShipping: String,
-    locationGeocoded: GeoLocation,
-    notes: String,
-    isFavorite: Boolean,
-    isIgnored: Boolean,
-    createdOn: Date,
-}
-
-type Query {
-    articles: [Article]
-    article(id: ID!): Article
-
-}
-
-input ArticleUpdate {
-    isFavorite: Boolean,
-}
-
-# TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
-type Mutation {
-    updateArticle(id: ID!, article: ArticleUpdate): Article
-}
-
+                        # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
+                        
+                        type GeoLocation {
+                            lat: String,
+                            long: String,
+                        }
+                        
+                        scalar Date
+                        
+                        # This "Book" type defines the queryable fields for every book in our data source.
+                        type Article {
+                            href: String,
+                            title: String,
+                            id: ID!,
+                            price: Int,
+                            location: String,
+                            isShipping: String,
+                            locationGeocoded: GeoLocation,
+                            notes: String,
+                            isFavorite: Boolean,
+                            isIgnored: Boolean,
+                            createdOn: Date,
+                        }
+                        
+                        type Query {
+                            articles: [Article]
+                            article(id: ID!): Article
+                        
+                        }
+                        
+                        input ArticleUpdate {
+                            isFavorite: Boolean,
+                        }
+                        
+                        # TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
+                        type Mutation {
+                            updateArticle(id: ID!, article: ArticleUpdate): Article
+                        }
 `;
 
 interface ArticleUpdate {
@@ -85,7 +85,18 @@ const articles = [
 // This resolver retrieves books from the "books" array above.
 const resolvers = {
     Query: {
-        articles: () => articles,
+        articles: async () => {
+            const client = await connectToDatabase()
+            const found = await collections.articles.find({})
+            const dbArticles = (await found.toArray()).slice(0, 20);
+
+            await client.close()
+
+            return dbArticles.map( it => {
+                    return { id: it._id.toString(), href: it.href, title: it.title}
+                }
+            )
+        },
         article: (parent, args) => {
             console.log(`ID param: ${args.id}`)
             return articles.filter(it => it.id === args.id).shift()

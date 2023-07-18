@@ -11,6 +11,8 @@
     "module": "esnext",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "noEmit": true,
+    "allowImportingTsExtensions":  true,
     "types": [
       "node"
     ]
