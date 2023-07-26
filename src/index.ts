@@ -22,7 +22,7 @@ const typeDefs = `#graphql
                             href: String,
                             title: String,
                             id: ID!,
-                            price: Int,
+                            price: String,
                             location: String,
                             isShipping: String,
                             locationGeocoded: GeoLocation,
@@ -61,12 +61,12 @@ const resolvers = {
     Query: {
         articles: async () => {
             const found = await collections.articles.find({isIgnored: null})
-            const dbArticles = (await found.toArray()).slice(0, 20);
+            const dbArticles = (await found.toArray());
 
             // await client.close()
 
             return dbArticles.map( it => {
-                    return { id: it._id.toString(), href: it.href, title: it.title}
+                    return { id: it._id.toString(), href: it.href, title: it.title, locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}}
                 }
             )
         },
@@ -86,10 +86,15 @@ const resolvers = {
 
             // const client = await connectToDatabase()
 
-            const update = await collections.articles.updateOne({_id: ObjectId.createFromHexString(args.id)}, { $set: { isIgnored: true } })
+            await collections.articles.updateOne({_id: ObjectId.createFromHexString(args.id)}, { $set: { isIgnored: true } })
+
+            const found = await collections.articles.find({_id: ObjectId.createFromHexString(args.id)})
+            const updated = (await found.toArray()).map( it => {
+                return { id: it._id, ...it}
+            }).shift()
 
             // await client.close()
-            return update
+            return updated
         }
 
     }
