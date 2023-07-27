@@ -20,6 +20,7 @@ scalar Date
 # This "Book" type defines the queryable fields for every book in our data source.
 type Article {
     href: String,
+    hrefImage: String,
     title: String,
     id: ID!,
     price: String,
@@ -64,8 +65,6 @@ const resolvers = {
             const found = await collections.articles.find({isIgnored: null})
             const dbArticles = (await found.toArray());
 
-            // await client.close()
-
             return dbArticles.map(it => {
                     return {
                         id: it._id.toString(),
@@ -73,6 +72,7 @@ const resolvers = {
                         title: it.title,
                         price: it.price,
                         isFavorite: it.isFavorite ? true : false,
+                        hrefImage: it.hrefImage,
                         locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
                     }
                 }

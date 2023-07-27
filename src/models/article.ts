@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 
 export interface Article {
     href: string;
+    hrefImage: string;
     title?: string;
     id: ObjectId;
     price?: string;
