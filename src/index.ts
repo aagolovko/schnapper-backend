@@ -8,45 +8,45 @@ import {ObjectId} from "mongodb";
 // that together define the "shape" of queries that are executed against
 // your data.
 const typeDefs = `#graphql
-                        # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
-                        
-                        type GeoLocation {
-                            lat: String,
-                            long: String,
-                        }
-                        
-                        scalar Date
-                        
-                        # This "Book" type defines the queryable fields for every book in our data source.
-                        type Article {
-                            href: String,
-                            title: String,
-                            id: ID!,
-                            price: String,
-                            location: String,
-                            isShipping: String,
-                            locationGeocoded: GeoLocation,
-                            notes: String,
-                            isFavorite: Boolean,
-                            isIgnored: Boolean,
-                            createdOn: Date,
-                        }
-                        
-                        type Query {
-                            articles: [Article]
-                            article(id: ID!): Article
-                        
-                        }
-                        
-                        input ArticleUpdate {
-                            isFavorite: Boolean,
-                        }
-                        
-                        # TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
-                        type Mutation {
-                            updateArticle(id: ID!, article: ArticleUpdate): Article
-                            ignoreArticle(id: ID!): Article
-                        }
+# Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
+
+type GeoLocation {
+    lat: String,
+    long: String,
+}
+
+scalar Date
+
+# This "Book" type defines the queryable fields for every book in our data source.
+type Article {
+    href: String,
+    title: String,
+    id: ID!,
+    price: String,
+    location: String,
+    isShipping: String,
+    locationGeocoded: GeoLocation,
+    notes: String,
+    isFavorite: Boolean,
+    isIgnored: Boolean,
+    createdOn: Date,
+}
+
+type Query {
+    articles: [Article]
+    article(id: ID!): Article
+
+}
+
+input ArticleUpdate {
+    isFavorite: Boolean,
+}
+
+# TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
+type Mutation {
+    updateArticle(id: ID!, article: ArticleUpdate): Article
+    ignoreArticle(id: ID!): Article
+}
 `;
 
 interface ArticleUpdate {
@@ -65,8 +65,14 @@ const resolvers = {
 
             // await client.close()
 
-            return dbArticles.map( it => {
-                    return { id: it._id.toString(), href: it.href, title: it.title, locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}}
+            return dbArticles.map(it => {
+                    return {
+                        id: it._id.toString(),
+                        href: `https://www.kleinanzeigen.de/${it.href}`,
+                        title: it.title,
+                        price: it.price,
+                        locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
+                    }
                 }
             )
         },
@@ -86,11 +92,11 @@ const resolvers = {
 
             // const client = await connectToDatabase()
 
-            await collections.articles.updateOne({_id: ObjectId.createFromHexString(args.id)}, { $set: { isIgnored: true } })
+            await collections.articles.updateOne({_id: ObjectId.createFromHexString(args.id)}, {$set: {isIgnored: true}})
 
             const found = await collections.articles.find({_id: ObjectId.createFromHexString(args.id)})
-            const updated = (await found.toArray()).map( it => {
-                return { id: it._id, ...it}
+            const updated = (await found.toArray()).map(it => {
+                return {id: it._id, ...it}
             }).shift()
 
             // await client.close()
