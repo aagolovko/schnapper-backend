@@ -46,6 +46,7 @@ input ArticleUpdate {
 type Mutation {
     updateArticle(id: ID!, article: ArticleUpdate): Article
     ignoreArticle(id: ID!): Article
+    favoriteArticle(id: ID!): Article
 }
 `;
 
@@ -71,6 +72,7 @@ const resolvers = {
                         href: `https://www.kleinanzeigen.de/${it.href}`,
                         title: it.title,
                         price: it.price,
+                        isFavorite: it.isFavorite ? true : false,
                         locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
                     }
                 }
@@ -87,25 +89,33 @@ const resolvers = {
             console.log(`Updating: ${args.id} ${JSON.stringify(args.article)}`)
             return articles.filter(it => it.id === args.id).shift()
         },
+
         ignoreArticle: async (parent, args) => {
-            console.log(`Updating: ${args.id}}`)
+            console.log(`Mark article as ignored: ${args.id}}`)
 
-            // const client = await connectToDatabase()
+            return updateArticle(args.id, {$set: {isIgnored: true}})
+        },
 
-            await collections.articles.updateOne({_id: ObjectId.createFromHexString(args.id)}, {$set: {isIgnored: true}})
+        favoriteArticle: async (parent, args) => {
+            console.log(`Mark article as favorite: ${args.id}}`)
 
-            const found = await collections.articles.find({_id: ObjectId.createFromHexString(args.id)})
-            const updated = (await found.toArray()).map(it => {
-                return {id: it._id, ...it}
-            }).shift()
-
-            // await client.close()
-            return updated
+            return updateArticle(args.id, {$set: {isFavorite: true}})
         }
 
     }
 };
 
+const updateArticle = async (id: string, update: any) => {
+    await collections.articles.updateOne({_id: ObjectId.createFromHexString(id)}, update)
+
+    const found = await collections.articles.find({_id: ObjectId.createFromHexString(id)})
+    const updated = (await found.toArray()).map(it => {
+        return {id: it._id, ...it}
+    }).shift()
+
+    // await client.close()
+    return updated
+}
 
 // The ApolloServer constructor requires two parameters: your schema
 // definition and your set of resolvers.
