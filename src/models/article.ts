@@ -6,6 +6,7 @@ export interface Article {
     title?: string;
     id: ObjectId;
     price?: string;
+    priceEur?: number;
     location: string;
     isShipping?: any;
     locationGeocoded?: any; // TODO: object has own schema, make sense to use it?

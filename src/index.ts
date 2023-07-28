@@ -24,8 +24,9 @@ type Article {
     title: String,
     id: ID!,
     price: String,
+    priceEur: Int,
     location: String,
-    isShipping: String,
+    isShipping: String, 
     locationGeocoded: GeoLocation,
     notes: String,
     isFavorite: Boolean,
@@ -62,7 +63,7 @@ const client = await connectToDatabase()
 const resolvers = {
     Query: {
         articles: async () => {
-            const found = await collections.articles.find({isIgnored: null})
+            const found = await collections.articles.find({ $or: [ {isIgnored: null}, {isIgnored: false}]})
             const dbArticles = (await found.toArray());
 
             return dbArticles.map(it => {
@@ -71,8 +72,10 @@ const resolvers = {
                         href: `https://www.kleinanzeigen.de/${it.href}`,
                         title: it.title,
                         price: it.price,
+                        priceEur: it.priceEur ? it.priceEur : 0,
                         isFavorite: it.isFavorite ? true : false,
                         hrefImage: it.hrefImage,
+                        location: it.location,
                         locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
                     }
                 }
