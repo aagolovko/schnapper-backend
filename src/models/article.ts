@@ -14,4 +14,5 @@ export interface Article {
     isFavorite?: boolean; // TODO: how to fix? why is it red? default value possible?
     isIgnored?: boolean;
     createdOn: string;
+    searchKeywords: string[];
 }

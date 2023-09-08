@@ -32,6 +32,7 @@ type Article {
     isFavorite: Boolean,
     isIgnored: Boolean,
     createdOn: Date,
+    searchKeywords: [String],
 }
 
 type Query {
@@ -76,6 +77,8 @@ const resolvers = {
                         isFavorite: it.isFavorite ? true : false,
                         hrefImage: it.hrefImage,
                         location: it.location,
+                        createdOncreatedOn: it.createdOn,
+                        searchKeywords: it.searchKeywords,
                         locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
                     }
                 }
