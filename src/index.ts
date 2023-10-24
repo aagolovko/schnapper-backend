@@ -26,7 +26,7 @@ type Article {
     price: String,
     priceEur: Int,
     location: String,
-    isShipping: String, 
+    isShipping: String,
     locationGeocoded: GeoLocation,
     notes: String,
     isFavorite: Boolean,
@@ -64,7 +64,10 @@ const client = await connectToDatabase()
 const resolvers = {
     Query: {
         articles: async () => {
-            const found = await collections.articles.find({ $or: [ {isIgnored: null}, {isIgnored: false}]})
+            const found = await collections.articles.find({
+                unavailableOn: {$exists: false},
+                $or: [{isIgnored: null}, {isIgnored: false}, {isFavorite: true}]
+            })
             const dbArticles = (await found.toArray());
 
             return dbArticles.map(it => {
