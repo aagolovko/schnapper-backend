@@ -3,54 +3,55 @@ import {startStandaloneServer} from '@apollo/server/standalone';
 import {collections, connectToDatabase} from "./services/database.service.ts";
 import {articles} from "./articles.mock.ts";
 import {ObjectId} from "mongodb";
+import {Bounds} from "./models/bounds";
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
 // your data.
 const typeDefs = `#graphql
-# Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
-
-type GeoLocation {
-    lat: String,
-    long: String,
-}
-
-scalar Date
-
-# This "Book" type defines the queryable fields for every book in our data source.
-type Article {
-    href: String,
-    hrefImage: String,
-    title: String,
-    id: ID!,
-    price: String,
-    priceEur: Int,
-    location: String,
-    isShipping: String,
-    locationGeocoded: GeoLocation,
-    notes: String,
-    isFavorite: Boolean,
-    isIgnored: Boolean,
-    createdOn: Date,
-    searchKeywords: [String],
-}
-
-type Query {
-    articles: [Article]
-    article(id: ID!): Article
-
-}
-
-input ArticleUpdate {
-    isFavorite: Boolean,
-}
-
-# TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
-type Mutation {
-    updateArticle(id: ID!, article: ArticleUpdate): Article
-    ignoreArticle(id: ID!): Article
-    favoriteArticle(id: ID!): Article
-}
+    # Comments in GraphQL strings (such as this one) start with the hash (#) symbol.
+    
+    type GeoLocation {
+        latitude: String,
+        longitude: String,
+    }
+    
+    scalar Date
+    
+    # This "Book" type defines the queryable fields for every book in our data source.
+    type Article {
+        href: String,
+        hrefImage: String,
+        title: String,
+        id: ID!,
+        price: String,
+        priceEur: Int,
+        location: String,
+        isShipping: String,
+        locationGeocoded: GeoLocation,
+        notes: String,
+        isFavorite: Boolean,
+        isIgnored: Boolean,
+        createdOn: Date,
+        searchKeywords: [String],
+    }
+    
+    type Query {
+        articles: [Article]
+        article(id: ID!): Article
+    
+    }
+    
+    input ArticleUpdate {
+        isFavorite: Boolean,
+    }
+    
+    # TODO: move to separate file like here: https://github.com/graphql-boilerplates/typescript-graphql-server/blob/master/advanced/src/schema.graphql
+    type Mutation {
+        updateArticle(id: ID!, article: ArticleUpdate): Article
+        ignoreArticle(id: ID!): Article
+        favoriteArticle(id: ID!): Article
+    }
 `;
 
 interface ArticleUpdate {
@@ -59,6 +60,13 @@ interface ArticleUpdate {
 
 const client = await connectToDatabase()
 
+const exampleData: Bounds = {
+    _southWest: { lat: 48.051578747653444, lng: 11.407928466796877 },
+    _northEast: { lat: 48.189093471714074, lng: 11.579246520996096 },
+};
+
+
+
 // Resolvers define how to fetch the types defined in your schema.
 // This resolver retrieves books from the "books" array above.
 const resolvers = {
@@ -66,7 +74,17 @@ const resolvers = {
         articles: async () => {
             const found = await collections.articles.find({
                 unavailableOn: {$exists: false},
-                $or: [{isIgnored: null}, {isIgnored: false}, {isFavorite: true}]
+                $and: [
+                    {"locationGeocoded.latitude": {$gt: exampleData._southWest.lat}},
+                    {"locationGeocoded.latitude": {$lt: exampleData._northEast.lat}},
+                    {"locationGeocoded.longitude": {$gt: exampleData._southWest.lng}},
+                    {"locationGeocoded.longitude": {$lt: exampleData._northEast.lng}}
+                ],
+                $or: [
+                    {isIgnored: null},
+                    {isIgnored: false},
+                    {isFavorite: true}
+                ]
             })
             const dbArticles = (await found.toArray());
 
@@ -82,7 +100,7 @@ const resolvers = {
                         location: it.location,
                         createdOncreatedOn: it.createdOn,
                         searchKeywords: it.searchKeywords,
-                        locationGeocoded: {lat: it.locationGeocoded?.latitude, long: it.locationGeocoded?.longitude}
+                        locationGeocoded: {latitude: it.locationGeocoded?.latitude, longitude: it.locationGeocoded?.longitude}
                     }
                 }
             )
