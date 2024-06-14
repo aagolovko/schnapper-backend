@@ -1,10 +1,10 @@
 import {ApolloServer} from '@apollo/server';
 import {startStandaloneServer} from '@apollo/server/standalone';
 import {collections, connectToDatabase} from "./services/database.service.ts";
-import {articles} from "./articles.mock.ts";
-import {ObjectId} from "mongodb";
+import {Collection, ObjectId} from "mongodb";
 import {Bounds} from "./models/bounds";
 import {typeDefs} from "./graphQLDefinitions.ts";
+import {Article} from "./models/article.ts";
 
 interface ArticleUpdate {
     isFavorite: boolean,
@@ -12,22 +12,19 @@ interface ArticleUpdate {
 
 const client = await connectToDatabase()
 
-const exampleData: Bounds = {
-    _southWest: { lat: 48.051578747653444, lng: 11.407928466796877 },
-    _northEast: { lat: 48.189093471714074, lng: 11.579246520996096 },
-};
-
 const resolvers = {
     Query: {
-        articles: getArticles(),
+        articles: async () => {
+            return getArticles()
+        },
         articlesBounded: getArticlesBounded(),
-        article: async () => {
-            return getArticle()
-        }
+        // article: async () => {
+        //     return getArticle()
+        // }
     },
     Mutation: {
         // parent, args
-        updateArticle: getUpdateArticle(),
+        // updateArticle: updateArticle,
 
         ignoreArticle: getIgnoreArticle(),
 
@@ -59,15 +56,15 @@ async function getArticles(bounds: Bounds = undefined) {
         let filterBounded = {
             ...filter,
             $and: [
-                {"locationGeocoded.latitude": {$gt: exampleData._southWest.lat}},
-                {"locationGeocoded.latitude": {$lt: exampleData._northEast.lat}},
-                {"locationGeocoded.longitude": {$gt: exampleData._southWest.lng}},
-                {"locationGeocoded.longitude": {$lt: exampleData._northEast.lng}}
+                {"locationGeocoded.latitude": {$gt: bounds._southWest.lat}},
+                {"locationGeocoded.latitude": {$lt: bounds._northEast.lat}},
+                {"locationGeocoded.longitude": {$gt: bounds._southWest.lng}},
+                {"locationGeocoded.longitude": {$lt: bounds._northEast.lng}}
             ]
         }
-        found = await collections.articles.find(filterBounded)
+        found = collections.articles.find(filterBounded)
     } else {
-        found = found = await collections.articles.find(filter)
+        found = collections.articles.findOne(filter)
     }
 
     const dbArticles = (await found.toArray());
@@ -90,20 +87,6 @@ async function getArticles(bounds: Bounds = undefined) {
     )
 }
 
-function getArticle() {
-    return (parent, args) => {
-        console.log(`ID param: ${args.id}`)
-        return articles.filter(it => it.id === args.id).shift()
-    };
-}
-
-function getUpdateArticle() {
-    return (parent, args) => {
-        console.log(`Updating: ${args.id} ${JSON.stringify(args.article)}`)
-        return articles.filter(it => it.id === args.id).shift()
-    };
-}
-
 function getIgnoreArticle() {
     return async (parent, args) => {
         console.log(`Mark article as ignored: ${args.id}}`)
@@ -123,7 +106,7 @@ function getFavoriteArticle() {
 const updateArticle = async (id: string, update: any) => {
     await collections.articles.updateOne({_id: ObjectId.createFromHexString(id)}, update)
 
-    const found = await collections.articles.find({_id: ObjectId.createFromHexString(id)})
+    const found = collections.articles.find({_id: ObjectId.createFromHexString(id)})
     const updated = (await found.toArray()).map(it => {
         return {id: it._id, ...it}
     }).shift()
