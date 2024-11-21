@@ -17,10 +17,10 @@ const resolvers = {
         articles: async () => {
             return getArticles()
         },
+        // searchProfiles: async () => {
+        //     return getSearchProfiles()
+        // },
         articlesBounded: getArticlesBounded(),
-        // article: async () => {
-        //     return getArticle()
-        // }
     },
     Mutation: {
         // parent, args
@@ -40,22 +40,38 @@ function getArticlesBounded() {
 
 }
 
+async function getSearchProfiles() {
+    const found = collections.searchProfiles.find();
+    const dbSearchProfiles = await found.toArray();
+
+    return dbSearchProfiles.map(it => {
+        return {
+            id: it._id.toString(),
+            title: it.title,
+            keywords: it.keywords,
+            notes: it.notes,
+            isActive: it.isActive
+        };
+    });
+}
+
 // Resolvers define how to fetch the types defined in your schema.
 async function getArticles(bounds: Bounds = undefined) {
     let filter = {
-        unavailableOn: {$exists: false},
-        $or: [
-            {isIgnored: null},
-            {isIgnored: false},
-            {isFavorite: true}
+        $and: [
+            { $nor: [{ isIgnored: true}] },
+            { $or: [
+                    {isFavorite: true},
+                    {isFavorite: null}
+                ] }
         ]
     };
 
     let found
     if (bounds != null) {
         let filterBounded = {
-            ...filter,
             $and: [
+                filter,
                 {"locationGeocoded.latitude": {$gt: bounds._southWest.lat}},
                 {"locationGeocoded.latitude": {$lt: bounds._northEast.lat}},
                 {"locationGeocoded.longitude": {$gt: bounds._southWest.lng}},
@@ -127,7 +143,7 @@ const server = new ApolloServer({
 //  2. installs your ApolloServer instance as middleware
 //  3. prepares your app to handle incoming requests
 const {url} = await startStandaloneServer(server, {
-    listen: {port: 4000},
+    listen: {port: parseInt(process.env.PORT) || 4000},
 });
 
 console.log(`🚀  Server ready at: ${url}`);

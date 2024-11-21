@@ -22,7 +22,23 @@ type GeoLocation {
 
 scalar Date
 
-# This "Book" type defines the queryable fields for every book in our data source.
+#type Location {
+#    searchArea: String!
+#    searchDistance: String!
+#    isActive: Boolean!
+#}
+#
+#type SearchProfile {
+#    id: ID!
+#    title: String!
+#    keywords: [String!]!
+#    notes: String!
+#    searchSchedule: String!
+#    maxPrice: Int!
+#    isActive: Boolean!
+#    locations: [Location!]!
+#}
+
 type Article {
     href: String,
     hrefImage: String,
@@ -42,6 +58,7 @@ type Article {
 
 type Query {
     articles: [Article]
+#    searchProfiles: [SearchProfile]
     articlesBounded(bounds: Bounds!): [Article]
     article(id: ID!): Article
 
