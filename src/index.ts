@@ -168,6 +168,71 @@ async function main() {
     }
   });
 
+  // GET /api/search-profiles - list all search profiles
+  app.get('/api/search-profiles', async (req: AuthRequest, res: Response) => {
+    try {
+      const profiles = await collections.searchProfiles.find({}).toArray();
+      const formatted = profiles.map((p: any) => ({
+        id: p._id.toString(),
+        title: p.title,
+        keywords: p.keywords || [],
+        isActive: p.isActive || false,
+        notes: p.notes,
+        searchSchedule: p.searchSchedule,
+        maxPrice: p.maxPrice,
+        locations: p.locations,
+      }));
+      res.json(formatted);
+    } catch (err) {
+      console.error('Error fetching search profiles:', err);
+      res.status(500).json({ error: 'Failed to fetch search profiles' });
+    }
+  });
+
+  // PUT /api/search-profiles/:id - update search profile
+  app.put('/api/search-profiles/:id', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      const { title, keywords, isActive } = req.body;
+      const profileId = req.params.id;
+
+      const update: any = {};
+      if (title !== undefined) update.title = title;
+      if (keywords !== undefined) update.keywords = Array.isArray(keywords) ? keywords : keywords.split(/[\s,]+/).filter((k: string) => k.trim());
+      if (isActive !== undefined) update.isActive = isActive;
+
+      console.log(`Updating search profile ${profileId}:`, update);
+
+      const result = await collections.searchProfiles.findOneAndUpdate(
+        { _id: new ObjectId(profileId) },
+        { $set: update },
+        { returnDocument: 'after' }
+      );
+
+      if (!result.value) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      const profile = result.value;
+      res.json({
+        id: profile._id.toString(),
+        title: profile.title,
+        keywords: profile.keywords || [],
+        isActive: profile.isActive || false,
+        notes: profile.notes,
+        searchSchedule: profile.searchSchedule,
+        maxPrice: profile.maxPrice,
+        locations: profile.locations,
+      });
+    } catch (err) {
+      console.error('Error updating search profile:', err);
+      res.status(500).json({ error: 'Failed to update search profile' });
+    }
+  });
+
   // Health check
   app.get('/health', (req: Request, res: Response) => {
     res.json({ status: 'ok' });
