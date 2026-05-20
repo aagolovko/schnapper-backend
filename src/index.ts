@@ -1,154 +1,181 @@
-import {ApolloServer} from '@apollo/server';
-import {startStandaloneServer} from '@apollo/server/standalone';
-import {collections, connectToDatabase} from "./services/database.service.ts";
-import {Collection, ObjectId} from "mongodb";
-import {Bounds} from "./models/bounds";
-import {typeDefs} from "./graphQLDefinitions.ts";
-import {Article} from "./models/article.ts";
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import jwt from 'jsonwebtoken';
+import { collections, connectToDatabase } from './services/database.service.ts';
+import { ObjectId } from 'mongodb';
+import { Bounds } from './models/bounds';
 
-interface ArticleUpdate {
-    isFavorite: boolean,
+const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+const PORT = parseInt(process.env.PORT || '4000');
+
+interface AuthContext {
+  isAuthenticated: boolean;
+  error?: string;
 }
 
-const client = await connectToDatabase()
+interface AuthRequest extends Request {
+  auth?: AuthContext;
+}
 
-const resolvers = {
-    Query: {
-        articles: async () => {
-            return getArticles()
-        },
-        // searchProfiles: async () => {
-        //     return getSearchProfiles()
-        // },
-        articlesBounded: getArticlesBounded(),
+function verifyAuth(req: AuthRequest): AuthContext {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return { isAuthenticated: false, error: 'No authorization header' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+
+  try {
+    jwt.verify(token, JWT_SECRET);
+    return { isAuthenticated: true };
+  } catch (err) {
+    return { isAuthenticated: false, error: `Invalid token: ${err.message}` };
+  }
+}
+
+function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  req.auth = verifyAuth(req);
+  next();
+}
+
+async function getArticles(bounds?: Bounds) {
+  const filter = {
+    $and: [
+      { $nor: [{ isIgnored: true }] },
+      { $or: [{ isFavorite: true }, { isFavorite: null }] },
+    ],
+  };
+
+  let found;
+  if (bounds) {
+    const filterBounded = {
+      $and: [
+        filter,
+        { 'locationGeocoded.latitude': { $gt: bounds._southWest.lat } },
+        { 'locationGeocoded.latitude': { $lt: bounds._northEast.lat } },
+        { 'locationGeocoded.longitude': { $gt: bounds._southWest.lng } },
+        { 'locationGeocoded.longitude': { $lt: bounds._northEast.lng } },
+      ],
+    };
+    found = collections.articles.find(filterBounded);
+  } else {
+    found = collections.articles.find(filter);
+  }
+
+  const dbArticles = await found.toArray();
+
+  return dbArticles.map((it) => ({
+    id: it._id.toString(),
+    href: `https://www.kleinanzeigen.de/${it.href}`,
+    title: it.title,
+    price: it.price,
+    priceEur: it.priceEur ? it.priceEur : 0,
+    isFavorite: it.isFavorite ? true : false,
+    hrefImage: it.hrefImage,
+    location: it.location,
+    createdOn: it.createdOn,
+    searchKeywords: it.searchKeywords,
+    locationGeocoded: {
+      latitude: it.locationGeocoded?.latitude,
+      longitude: it.locationGeocoded?.longitude,
     },
-    Mutation: {
-        // parent, args
-        // updateArticle: updateArticle,
+  }));
+}
 
-        ignoreArticle: getIgnoreArticle(),
+async function updateArticle(id: string, update: any) {
+  await collections.articles.updateOne(
+    { _id: ObjectId.createFromHexString(id) },
+    update
+  );
 
-        favoriteArticle: getFavoriteArticle()
+  const found = collections.articles.find({
+    _id: ObjectId.createFromHexString(id),
+  });
+  const updated = (await found.toArray())
+    .map((it) => ({ id: it._id.toString(), ...it }))
+    .shift();
 
+  return updated;
+}
+
+async function main() {
+  await connectToDatabase();
+
+  const app = express();
+
+  app.use(express.json());
+  app.use(
+    cors({
+      origin: process.env.CORS_ORIGIN || 'http://localhost:4201',
+      credentials: true,
+    })
+  );
+  app.use(authMiddleware);
+
+  // GET /api/articles - get all articles
+  app.get('/api/articles', async (req: AuthRequest, res: Response) => {
+    try {
+      const articles = await getArticles();
+      res.json(articles);
+    } catch (err) {
+      console.error('Error fetching articles:', err);
+      res.status(500).json({ error: 'Failed to fetch articles' });
     }
-};
+  });
 
-function getArticlesBounded() {
-    return (parent, args) => {
-        return getArticles(args.bounds)
-    };
-
-}
-
-async function getSearchProfiles() {
-    const found = collections.searchProfiles.find();
-    const dbSearchProfiles = await found.toArray();
-
-    return dbSearchProfiles.map(it => {
-        return {
-            id: it._id.toString(),
-            title: it.title,
-            keywords: it.keywords,
-            notes: it.notes,
-            isActive: it.isActive
-        };
-    });
-}
-
-// Resolvers define how to fetch the types defined in your schema.
-async function getArticles(bounds: Bounds = undefined) {
-    let filter = {
-        $and: [
-            { $nor: [{ isIgnored: true}] },
-            { $or: [
-                    {isFavorite: true},
-                    {isFavorite: null}
-                ] }
-        ]
-    };
-
-    let found
-    if (bounds != null) {
-        let filterBounded = {
-            $and: [
-                filter,
-                {"locationGeocoded.latitude": {$gt: bounds._southWest.lat}},
-                {"locationGeocoded.latitude": {$lt: bounds._northEast.lat}},
-                {"locationGeocoded.longitude": {$gt: bounds._southWest.lng}},
-                {"locationGeocoded.longitude": {$lt: bounds._northEast.lng}}
-            ]
-        }
-        found = collections.articles.find(filterBounded)
-    } else {
-        found = collections.articles.findOne(filter)
+  // GET /api/articles/bounded - get articles within bounds
+  app.get('/api/articles/bounded', async (req: AuthRequest, res: Response) => {
+    try {
+      const bounds = req.query.bounds ? JSON.parse(req.query.bounds as string) : undefined;
+      const articles = await getArticles(bounds);
+      res.json(articles);
+    } catch (err) {
+      console.error('Error fetching bounded articles:', err);
+      res.status(500).json({ error: 'Failed to fetch articles' });
     }
+  });
 
-    const dbArticles = (await found.toArray());
+  // POST /api/articles/:id/favorite - mark article as favorite
+  app.post('/api/articles/:id/favorite', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
 
-    return dbArticles.map(it => {
-            return {
-                id: it._id.toString(),
-                href: `https://www.kleinanzeigen.de/${it.href}`,
-                title: it.title,
-                price: it.price,
-                priceEur: it.priceEur ? it.priceEur : 0,
-                isFavorite: it.isFavorite ? true : false,
-                hrefImage: it.hrefImage,
-                location: it.location,
-                createdOncreatedOn: it.createdOn,
-                searchKeywords: it.searchKeywords,
-                locationGeocoded: {latitude: it.locationGeocoded?.latitude, longitude: it.locationGeocoded?.longitude}
-            }
-        }
-    )
+      console.log(`Mark article as favorite: ${req.params.id}`);
+      const updated = await updateArticle(req.params.id, { $set: { isFavorite: true } });
+      res.json(updated);
+    } catch (err) {
+      console.error('Error updating article:', err);
+      res.status(500).json({ error: 'Failed to update article' });
+    }
+  });
+
+  // POST /api/articles/:id/ignore - mark article as ignored
+  app.post('/api/articles/:id/ignore', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      console.log(`Mark article as ignored: ${req.params.id}`);
+      const updated = await updateArticle(req.params.id, { $set: { isIgnored: true } });
+      res.json(updated);
+    } catch (err) {
+      console.error('Error updating article:', err);
+      res.status(500).json({ error: 'Failed to update article' });
+    }
+  });
+
+  // Health check
+  app.get('/health', (req: Request, res: Response) => {
+    res.json({ status: 'ok' });
+  });
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server ready at http://0.0.0.0:${PORT}`);
+  });
 }
 
-function getIgnoreArticle() {
-    return async (parent, args) => {
-        console.log(`Mark article as ignored: ${args.id}}`)
-
-        return updateArticle(args.id, {$set: {isIgnored: true}})
-    };
-}
-
-function getFavoriteArticle() {
-    return async (parent, args) => {
-        console.log(`Mark article as favorite: ${args.id}}`)
-
-        return updateArticle(args.id, {$set: {isFavorite: true}})
-    };
-}
-
-const updateArticle = async (id: string, update: any) => {
-    await collections.articles.updateOne({_id: ObjectId.createFromHexString(id)}, update)
-
-    const found = collections.articles.find({_id: ObjectId.createFromHexString(id)})
-    const updated = (await found.toArray()).map(it => {
-        return {id: it._id, ...it}
-    }).shift()
-
-    // await client.close()
-    return updated
-}
-
-// The ApolloServer constructor requires two parameters: your schema
-// definition and your set of resolvers.
-const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-});
-
-// Passing an ApolloServer instance to the `startStandaloneServer` function:
-//  1. creates an Express app
-//  2. installs your ApolloServer instance as middleware
-//  3. prepares your app to handle incoming requests
-const {url} = await startStandaloneServer(server, {
-    listen: {port: parseInt(process.env.PORT) || 4000},
-});
-
-console.log(`🚀  Server ready at: ${url}`);
-
-
-
-
-
+main().catch(console.error);
