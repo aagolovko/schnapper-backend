@@ -233,6 +233,75 @@ async function main() {
     }
   });
 
+  // POST /api/search-profiles - create new search profile
+  app.post('/api/search-profiles', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      const { title, keywords, isActive } = req.body;
+
+      if (!title) {
+        return res.status(400).json({ error: 'Title is required' });
+      }
+
+      const newProfile = {
+        title,
+        keywords: Array.isArray(keywords) ? keywords : (keywords ? keywords.split(/[\s,]+/).filter((k: string) => k.trim()) : []),
+        isActive: isActive || false,
+        notes: '',
+        searchSchedule: '*',
+        maxPrice: null,
+        locations: [],
+      };
+
+      console.log(`Creating new search profile: ${title}`);
+
+      const result = await collections.searchProfiles.insertOne(newProfile as any);
+
+      res.status(201).json({
+        id: result.insertedId.toString(),
+        title: newProfile.title,
+        keywords: newProfile.keywords,
+        isActive: newProfile.isActive,
+        notes: newProfile.notes,
+        searchSchedule: newProfile.searchSchedule,
+        maxPrice: newProfile.maxPrice,
+        locations: newProfile.locations,
+      });
+    } catch (err) {
+      console.error('Error creating search profile:', err);
+      res.status(500).json({ error: 'Failed to create search profile' });
+    }
+  });
+
+  // DELETE /api/search-profiles/:id - delete search profile
+  app.delete('/api/search-profiles/:id', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      const profileId = req.params.id;
+
+      console.log(`Deleting search profile ${profileId}`);
+
+      const result = await collections.searchProfiles.findOneAndDelete({
+        _id: new ObjectId(profileId),
+      });
+
+      if (!result.value) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      res.json({ message: 'Profile deleted successfully', id: profileId });
+    } catch (err) {
+      console.error('Error deleting search profile:', err);
+      res.status(500).json({ error: 'Failed to delete search profile' });
+    }
+  });
+
   // Health check
   app.get('/health', (req: Request, res: Response) => {
     res.json({ status: 'ok' });
