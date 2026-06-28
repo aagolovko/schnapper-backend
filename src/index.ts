@@ -192,10 +192,6 @@ async function main() {
   // PUT /api/search-profiles/:id - update search profile
   app.put('/api/search-profiles/:id', async (req: AuthRequest, res: Response) => {
     try {
-      if (!req.auth?.isAuthenticated) {
-        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
-      }
-
       const { title, keywords, isActive } = req.body;
       const profileId = req.params.id;
 
@@ -206,17 +202,16 @@ async function main() {
 
       console.log(`Updating search profile ${profileId}:`, update);
 
-      const result = await collections.searchProfiles.findOneAndUpdate(
+      const profile = await collections.searchProfiles.findOneAndUpdate(
         { _id: new ObjectId(profileId) },
         { $set: update },
         { returnDocument: 'after' }
       );
 
-      if (!result.value) {
+      if (!profile) {
         return res.status(404).json({ error: 'Profile not found' });
       }
 
-      const profile = result.value;
       res.json({
         id: profile._id.toString(),
         title: profile.title,
@@ -236,10 +231,6 @@ async function main() {
   // POST /api/search-profiles - create new search profile
   app.post('/api/search-profiles', async (req: AuthRequest, res: Response) => {
     try {
-      if (!req.auth?.isAuthenticated) {
-        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
-      }
-
       const { title, keywords, isActive } = req.body;
 
       if (!title) {
@@ -279,19 +270,15 @@ async function main() {
   // DELETE /api/search-profiles/:id - delete search profile
   app.delete('/api/search-profiles/:id', async (req: AuthRequest, res: Response) => {
     try {
-      if (!req.auth?.isAuthenticated) {
-        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
-      }
-
       const profileId = req.params.id;
 
       console.log(`Deleting search profile ${profileId}`);
 
-      const result = await collections.searchProfiles.findOneAndDelete({
+      const deletedProfile = await collections.searchProfiles.findOneAndDelete({
         _id: new ObjectId(profileId),
       });
 
-      if (!result.value) {
+      if (!deletedProfile) {
         return res.status(404).json({ error: 'Profile not found' });
       }
 

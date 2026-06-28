@@ -14,8 +14,10 @@ export async function connectToDatabase() {
     await applySchemaValidation(db);
     // Connect to the collection with the specific name from .env.dev, found in the database previously specified
     const articlesCollection = db.collection(process.env.ARTICLES_COLLECTION_NAME);
+    const searchProfilesCollection = db.collection('searchProfiles');
     // Persist the connection to the Games collection
     collections.articles = articlesCollection;
+    collections.searchProfiles = searchProfilesCollection;
     console.log(`Successfully connected to database: ${db.databaseName} and collections`);
     return client;
 }
