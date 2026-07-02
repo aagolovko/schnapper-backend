@@ -42,6 +42,34 @@ interface GoogleUser {
   picture?: string;
 }
 
+function getPriceSortKey(price?: string): number {
+  const normalized = price?.trim() || '';
+
+  if (!normalized) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  if (/^VB$/i.test(normalized)) {
+    return 0;
+  }
+
+  const numericPart = normalized.replace(/[^\d]/g, '');
+  const numericValue = numericPart ? Number.parseInt(numericPart, 10) : Number.MAX_SAFE_INTEGER;
+
+  if (Number.isNaN(numericValue)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return numericValue;
+}
+
+function compareArticlesByPrice(a: any, b: any): number {
+  const priceA = getPriceSortKey(a.price);
+  const priceB = getPriceSortKey(b.price);
+
+  return priceA - priceB;
+}
+
 function verifyAuth(req: AuthRequest): AuthContext {
   const authHeader = req.headers.authorization;
 
@@ -114,7 +142,9 @@ async function getArticles(bounds?: Bounds) {
 
   const dbArticles = await found.toArray();
 
-  return dbArticles.map((it) => ({
+  return dbArticles
+    .sort(compareArticlesByPrice)
+    .map((it) => ({
     ...it,
     id: it._id.toString(),
     href: `https://www.kleinanzeigen.de/${it.href}`,
@@ -130,7 +160,7 @@ async function getArticles(bounds?: Bounds) {
       latitude: it.locationGeocoded?.latitude,
       longitude: it.locationGeocoded?.longitude,
     },
-  }));
+    }));
 }
 
 async function updateArticle(id: string, update: any) {

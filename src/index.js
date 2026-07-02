@@ -17,6 +17,26 @@ function parseKeywords(input) {
         .map((k) => k.trim())
         .filter((k) => k.length > 0);
 }
+function getPriceSortKey(price) {
+    const normalized = price?.trim() || '';
+    if (!normalized) {
+        return Number.MAX_SAFE_INTEGER;
+    }
+    if (/^VB$/i.test(normalized)) {
+        return 0;
+    }
+    const numericPart = normalized.replace(/[^\d]/g, '');
+    const numericValue = numericPart ? Number.parseInt(numericPart, 10) : Number.MAX_SAFE_INTEGER;
+    if (Number.isNaN(numericValue)) {
+        return Number.MAX_SAFE_INTEGER;
+    }
+    return numericValue;
+}
+function compareArticlesByPrice(a, b) {
+    const priceA = getPriceSortKey(a.price);
+    const priceB = getPriceSortKey(b.price);
+    return priceA - priceB;
+}
 function verifyAuth(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -77,7 +97,9 @@ async function getArticles(bounds) {
         found = articlesCollection.find(filter);
     }
     const dbArticles = await found.toArray();
-    return dbArticles.map((it) => ({
+    return dbArticles
+        .sort(compareArticlesByPrice)
+        .map((it) => ({
         ...it,
         id: it._id.toString(),
         href: `https://www.kleinanzeigen.de/${it.href}`,
