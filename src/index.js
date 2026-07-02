@@ -5,6 +5,12 @@ import { collections, connectToDatabase } from './services/database.service.ts';
 import { ObjectId } from 'mongodb';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const PORT = parseInt(process.env.PORT || '4000');
+function parseKeywords(input) {
+    return input
+        .split(/\r?\n/)
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0);
+}
 function verifyAuth(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -136,6 +142,26 @@ async function main() {
             res.status(500).json({ error: 'Failed to update article' });
         }
     });
+    // DELETE /api/articles/:id - remove article from the database
+    app.delete('/api/articles/:id', async (req, res) => {
+        try {
+            if (!req.auth?.isAuthenticated) {
+                return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+            }
+            console.log(`Delete article: ${req.params.id}`);
+            const result = await collections.articles.deleteOne({
+                _id: ObjectId.createFromHexString(req.params.id),
+            });
+            if (!result.deletedCount) {
+                return res.status(404).json({ error: 'Article not found' });
+            }
+            res.json({ id: req.params.id, deleted: true });
+        }
+        catch (err) {
+            console.error('Error deleting article:', err);
+            res.status(500).json({ error: 'Failed to delete article' });
+        }
+    });
     // GET /api/search-profiles - list all search profiles
     app.get('/api/search-profiles', async (req, res) => {
         try {
@@ -166,7 +192,7 @@ async function main() {
             if (title !== undefined)
                 update.title = title;
             if (keywords !== undefined)
-                update.keywords = Array.isArray(keywords) ? keywords : keywords.split(/[\s,]+/).filter((k) => k.trim());
+                update.keywords = Array.isArray(keywords) ? keywords : parseKeywords(keywords);
             if (isActive !== undefined)
                 update.isActive = isActive;
             console.log(`Updating search profile ${profileId}:`, update);
@@ -199,7 +225,7 @@ async function main() {
             }
             const newProfile = {
                 title,
-                keywords: Array.isArray(keywords) ? keywords : (keywords ? keywords.split(/[\s,]+/).filter((k) => k.trim()) : []),
+                keywords: Array.isArray(keywords) ? keywords : (keywords ? parseKeywords(keywords) : []),
                 isActive: isActive || false,
                 notes: '',
                 searchSchedule: '*',

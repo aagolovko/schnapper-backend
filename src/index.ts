@@ -8,6 +8,13 @@ import { Bounds } from './models/bounds';
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const PORT = parseInt(process.env.PORT || '4000');
 
+function parseKeywords(input: string): string[] {
+  return input
+    .split(/\r?\n/)
+    .map((k: string) => k.trim())
+    .filter((k: string) => k.length > 0);
+}
+
 interface AuthContext {
   isAuthenticated: boolean;
   error?: string;
@@ -24,13 +31,22 @@ function verifyAuth(req: AuthRequest): AuthContext {
     return { isAuthenticated: false, error: 'No authorization header' };
   }
 
-  const token = authHeader.replace('Bearer ', '');
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return { isAuthenticated: false, error: 'Invalid authorization header format' };
+  }
+
+  const token = match[1].trim();
+  if (!token) {
+    return { isAuthenticated: false, error: 'Missing bearer token' };
+  }
 
   try {
     jwt.verify(token, JWT_SECRET);
     return { isAuthenticated: true };
   } catch (err) {
-    return { isAuthenticated: false, error: `Invalid token: ${err.message}` };
+    const message = err instanceof Error ? err.message : 'Unknown token verification error';
+    return { isAuthenticated: false, error: `Invalid token: ${message}` };
   }
 }
 
@@ -168,6 +184,29 @@ async function main() {
     }
   });
 
+  // DELETE /api/articles/:id - remove article from the database
+  app.delete('/api/articles/:id', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      console.log(`Delete article: ${req.params.id}`);
+      const result = await collections.articles.deleteOne({
+        _id: ObjectId.createFromHexString(req.params.id),
+      });
+
+      if (!result.deletedCount) {
+        return res.status(404).json({ error: 'Article not found' });
+      }
+
+      res.json({ id: req.params.id, deleted: true });
+    } catch (err) {
+      console.error('Error deleting article:', err);
+      res.status(500).json({ error: 'Failed to delete article' });
+    }
+  });
+
   // GET /api/search-profiles - list all search profiles
   app.get('/api/search-profiles', async (req: AuthRequest, res: Response) => {
     try {
@@ -197,7 +236,7 @@ async function main() {
 
       const update: any = {};
       if (title !== undefined) update.title = title;
-      if (keywords !== undefined) update.keywords = Array.isArray(keywords) ? keywords : keywords.split(/[\s,]+/).filter((k: string) => k.trim());
+      if (keywords !== undefined) update.keywords = Array.isArray(keywords) ? keywords : parseKeywords(keywords);
       if (isActive !== undefined) update.isActive = isActive;
 
       console.log(`Updating search profile ${profileId}:`, update);
@@ -239,7 +278,7 @@ async function main() {
 
       const newProfile = {
         title,
-        keywords: Array.isArray(keywords) ? keywords : (keywords ? keywords.split(/[\s,]+/).filter((k: string) => k.trim()) : []),
+        keywords: Array.isArray(keywords) ? keywords : (keywords ? parseKeywords(keywords) : []),
         isActive: isActive || false,
         notes: '',
         searchSchedule: '*',
