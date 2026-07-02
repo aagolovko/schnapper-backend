@@ -1,10 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
-import { collections, connectToDatabase } from './services/database.service.ts';
+import * as dotenv from 'dotenv-flow';
+import { OAuth2Client } from 'google-auth-library';
+import { connectToDatabase, getArticlesCollection, getSearchProfilesCollection } from './services/database.service.js';
 import { ObjectId } from 'mongodb';
+dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const PORT = parseInt(process.env.PORT || '4000');
+const googleAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : undefined;
 function parseKeywords(input) {
     return input
         .split(/\r?\n/)
@@ -16,20 +22,38 @@ function verifyAuth(req) {
     if (!authHeader) {
         return { isAuthenticated: false, error: 'No authorization header' };
     }
-    const token = authHeader.replace('Bearer ', '');
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!match) {
+        return { isAuthenticated: false, error: 'Invalid authorization header format' };
+    }
+    const token = match[1].trim();
+    if (!token) {
+        return { isAuthenticated: false, error: 'Missing bearer token' };
+    }
     try {
         jwt.verify(token, JWT_SECRET);
         return { isAuthenticated: true };
     }
     catch (err) {
-        return { isAuthenticated: false, error: `Invalid token: ${err.message}` };
+        const message = err instanceof Error ? err.message : 'Unknown token verification error';
+        return { isAuthenticated: false, error: `Invalid token: ${message}` };
     }
 }
 function authMiddleware(req, res, next) {
     req.auth = verifyAuth(req);
     next();
 }
+function issueAppJwt(user) {
+    return jwt.sign({
+        sub: user.sub,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        provider: 'google',
+    }, JWT_SECRET, { expiresIn: '7d' });
+}
 async function getArticles(bounds) {
+    const articlesCollection = getArticlesCollection();
     const filter = {
         $and: [
             { $nor: [{ isIgnored: true }] },
@@ -47,13 +71,14 @@ async function getArticles(bounds) {
                 { 'locationGeocoded.longitude': { $lt: bounds._northEast.lng } },
             ],
         };
-        found = collections.articles.find(filterBounded);
+        found = articlesCollection.find(filterBounded);
     }
     else {
-        found = collections.articles.find(filter);
+        found = articlesCollection.find(filter);
     }
     const dbArticles = await found.toArray();
     return dbArticles.map((it) => ({
+        ...it,
         id: it._id.toString(),
         href: `https://www.kleinanzeigen.de/${it.href}`,
         title: it.title,
@@ -71,12 +96,13 @@ async function getArticles(bounds) {
     }));
 }
 async function updateArticle(id, update) {
-    await collections.articles.updateOne({ _id: ObjectId.createFromHexString(id) }, update);
-    const found = collections.articles.find({
+    const articlesCollection = getArticlesCollection();
+    await articlesCollection.updateOne({ _id: ObjectId.createFromHexString(id) }, update);
+    const found = articlesCollection.find({
         _id: ObjectId.createFromHexString(id),
     });
     const updated = (await found.toArray())
-        .map((it) => ({ id: it._id.toString(), ...it }))
+        .map((it) => ({ ...it, id: it._id.toString() }))
         .shift();
     return updated;
 }
@@ -89,6 +115,38 @@ async function main() {
         credentials: true,
     }));
     app.use(authMiddleware);
+    app.post('/api/auth/google', async (req, res) => {
+        try {
+            const credential = req.body.credential?.trim();
+            if (!credential) {
+                return res.status(400).json({ error: 'Google credential is required' });
+            }
+            if (!googleAuthClient) {
+                return res.status(500).json({ error: 'Google client is not configured' });
+            }
+            const ticket = await googleAuthClient.verifyIdToken({
+                idToken: credential,
+                audience: GOOGLE_CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+            if (!payload?.sub) {
+                return res.status(401).json({ error: 'Invalid Google credential' });
+            }
+            const user = {
+                sub: payload.sub,
+                email: payload.email,
+                name: payload.name,
+                picture: payload.picture,
+            };
+            const token = issueAppJwt(user);
+            res.json({ token, user });
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown Google auth error';
+            console.error('Google login failed:', err);
+            res.status(401).json({ error: `Google sign-in failed: ${message}` });
+        }
+    });
     // GET /api/articles - get all articles
     app.get('/api/articles', async (req, res) => {
         try {
@@ -149,7 +207,7 @@ async function main() {
                 return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
             }
             console.log(`Delete article: ${req.params.id}`);
-            const result = await collections.articles.deleteOne({
+            const result = await getArticlesCollection().deleteOne({
                 _id: ObjectId.createFromHexString(req.params.id),
             });
             if (!result.deletedCount) {
@@ -165,7 +223,7 @@ async function main() {
     // GET /api/search-profiles - list all search profiles
     app.get('/api/search-profiles', async (req, res) => {
         try {
-            const profiles = await collections.searchProfiles.find({}).toArray();
+            const profiles = await getSearchProfilesCollection().find({}).toArray();
             const formatted = profiles.map((p) => ({
                 id: p._id.toString(),
                 title: p.title,
@@ -196,7 +254,7 @@ async function main() {
             if (isActive !== undefined)
                 update.isActive = isActive;
             console.log(`Updating search profile ${profileId}:`, update);
-            const profile = await collections.searchProfiles.findOneAndUpdate({ _id: new ObjectId(profileId) }, { $set: update }, { returnDocument: 'after' });
+            const profile = await getSearchProfilesCollection().findOneAndUpdate({ _id: new ObjectId(profileId) }, { $set: update }, { returnDocument: 'after' });
             if (!profile) {
                 return res.status(404).json({ error: 'Profile not found' });
             }
@@ -233,7 +291,7 @@ async function main() {
                 locations: [],
             };
             console.log(`Creating new search profile: ${title}`);
-            const result = await collections.searchProfiles.insertOne(newProfile);
+            const result = await getSearchProfilesCollection().insertOne(newProfile);
             res.status(201).json({
                 id: result.insertedId.toString(),
                 title: newProfile.title,
@@ -255,7 +313,7 @@ async function main() {
         try {
             const profileId = req.params.id;
             console.log(`Deleting search profile ${profileId}`);
-            const deletedProfile = await collections.searchProfiles.findOneAndDelete({
+            const deletedProfile = await getSearchProfilesCollection().findOneAndDelete({
                 _id: new ObjectId(profileId),
             });
             if (!deletedProfile) {

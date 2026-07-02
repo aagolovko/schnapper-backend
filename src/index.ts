@@ -1,12 +1,19 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
-import { collections, connectToDatabase } from './services/database.service.ts';
+import * as dotenv from 'dotenv-flow';
+import { OAuth2Client } from 'google-auth-library';
+import { connectToDatabase, getArticlesCollection, getSearchProfilesCollection } from './services/database.service.js';
 import { ObjectId } from 'mongodb';
-import { Bounds } from './models/bounds';
+import { Bounds } from './models/bounds.js';
+
+dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const PORT = parseInt(process.env.PORT || '4000');
+const googleAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : undefined;
 
 function parseKeywords(input: string): string[] {
   return input
@@ -22,6 +29,17 @@ interface AuthContext {
 
 interface AuthRequest extends Request {
   auth?: AuthContext;
+}
+
+interface GoogleAuthRequestBody {
+  credential?: string;
+}
+
+interface GoogleUser {
+  sub: string;
+  email?: string;
+  name?: string;
+  picture?: string;
 }
 
 function verifyAuth(req: AuthRequest): AuthContext {
@@ -55,8 +73,23 @@ function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   next();
 }
 
+function issueAppJwt(user: GoogleUser) {
+  return jwt.sign(
+    {
+      sub: user.sub,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      provider: 'google',
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
 async function getArticles(bounds?: Bounds) {
-  const filter = {
+  const articlesCollection = getArticlesCollection();
+  const filter: any = {
     $and: [
       { $nor: [{ isIgnored: true }] },
       { $or: [{ isFavorite: true }, { isFavorite: null }] },
@@ -65,7 +98,7 @@ async function getArticles(bounds?: Bounds) {
 
   let found;
   if (bounds) {
-    const filterBounded = {
+    const filterBounded: any = {
       $and: [
         filter,
         { 'locationGeocoded.latitude': { $gt: bounds._southWest.lat } },
@@ -74,14 +107,15 @@ async function getArticles(bounds?: Bounds) {
         { 'locationGeocoded.longitude': { $lt: bounds._northEast.lng } },
       ],
     };
-    found = collections.articles.find(filterBounded);
+    found = articlesCollection.find(filterBounded);
   } else {
-    found = collections.articles.find(filter);
+    found = articlesCollection.find(filter);
   }
 
   const dbArticles = await found.toArray();
 
   return dbArticles.map((it) => ({
+    ...it,
     id: it._id.toString(),
     href: `https://www.kleinanzeigen.de/${it.href}`,
     title: it.title,
@@ -100,16 +134,18 @@ async function getArticles(bounds?: Bounds) {
 }
 
 async function updateArticle(id: string, update: any) {
-  await collections.articles.updateOne(
+  const articlesCollection = getArticlesCollection();
+
+  await articlesCollection.updateOne(
     { _id: ObjectId.createFromHexString(id) },
     update
   );
 
-  const found = collections.articles.find({
+  const found = articlesCollection.find({
     _id: ObjectId.createFromHexString(id),
   });
   const updated = (await found.toArray())
-    .map((it) => ({ id: it._id.toString(), ...it }))
+    .map((it) => ({ ...it, id: it._id.toString() }))
     .shift();
 
   return updated;
@@ -128,6 +164,43 @@ async function main() {
     })
   );
   app.use(authMiddleware);
+
+  app.post('/api/auth/google', async (req: Request<{}, {}, GoogleAuthRequestBody>, res: Response) => {
+    try {
+      const credential = req.body.credential?.trim();
+      if (!credential) {
+        return res.status(400).json({ error: 'Google credential is required' });
+      }
+
+      if (!googleAuthClient) {
+        return res.status(500).json({ error: 'Google client is not configured' });
+      }
+
+      const ticket = await googleAuthClient.verifyIdToken({
+        idToken: credential,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+
+      if (!payload?.sub) {
+        return res.status(401).json({ error: 'Invalid Google credential' });
+      }
+
+      const user: GoogleUser = {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        picture: payload.picture,
+      };
+
+      const token = issueAppJwt(user);
+      res.json({ token, user });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown Google auth error';
+      console.error('Google login failed:', err);
+      res.status(401).json({ error: `Google sign-in failed: ${message}` });
+    }
+  });
 
   // GET /api/articles - get all articles
   app.get('/api/articles', async (req: AuthRequest, res: Response) => {
@@ -192,7 +265,7 @@ async function main() {
       }
 
       console.log(`Delete article: ${req.params.id}`);
-      const result = await collections.articles.deleteOne({
+      const result = await getArticlesCollection().deleteOne({
         _id: ObjectId.createFromHexString(req.params.id),
       });
 
@@ -210,7 +283,7 @@ async function main() {
   // GET /api/search-profiles - list all search profiles
   app.get('/api/search-profiles', async (req: AuthRequest, res: Response) => {
     try {
-      const profiles = await collections.searchProfiles.find({}).toArray();
+      const profiles = await getSearchProfilesCollection().find({}).toArray();
       const formatted = profiles.map((p: any) => ({
         id: p._id.toString(),
         title: p.title,
@@ -241,7 +314,7 @@ async function main() {
 
       console.log(`Updating search profile ${profileId}:`, update);
 
-      const profile = await collections.searchProfiles.findOneAndUpdate(
+      const profile = await getSearchProfilesCollection().findOneAndUpdate(
         { _id: new ObjectId(profileId) },
         { $set: update },
         { returnDocument: 'after' }
@@ -288,7 +361,7 @@ async function main() {
 
       console.log(`Creating new search profile: ${title}`);
 
-      const result = await collections.searchProfiles.insertOne(newProfile as any);
+      const result = await getSearchProfilesCollection().insertOne(newProfile as any);
 
       res.status(201).json({
         id: result.insertedId.toString(),
@@ -313,7 +386,7 @@ async function main() {
 
       console.log(`Deleting search profile ${profileId}`);
 
-      const deletedProfile = await collections.searchProfiles.findOneAndDelete({
+      const deletedProfile = await getSearchProfilesCollection().findOneAndDelete({
         _id: new ObjectId(profileId),
       });
 
