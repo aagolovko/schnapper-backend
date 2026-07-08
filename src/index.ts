@@ -272,6 +272,53 @@ async function main() {
     }
   });
 
+  // DELETE /api/articles/by-keyword/:keyword - mark a keyword as disabled in profiles and delete matching articles
+  app.delete('/api/articles/by-keyword/:keyword', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      const keyword = decodeURIComponent(req.params.keyword || '').trim();
+      if (!keyword) {
+        return res.status(400).json({ error: 'Keyword is required' });
+      }
+
+      console.log(`Delete articles by keyword: ${keyword}`);
+      const profiles = await getSearchProfilesCollection()
+        .find({ keywords: keyword })
+        .toArray();
+
+      let updatedProfiles = 0;
+      for (const profile of profiles) {
+        const nextKeywords = (profile.keywords || []).map((item) =>
+          item === keyword ? `-${keyword}` : item
+        );
+
+        const updateResult = await getSearchProfilesCollection().updateOne(
+          { _id: profile._id },
+          { $set: { keywords: nextKeywords } }
+        );
+
+        updatedProfiles += updateResult.modifiedCount;
+      }
+
+      const result = await getArticlesCollection().deleteMany({
+        searchKeywords: keyword,
+      });
+
+      res.json({
+        keyword,
+        deleted: true,
+        deletedCount: result.deletedCount,
+        removedFromProfiles: updatedProfiles,
+      });
+    } catch (err) {
+      console.error('Error deleting articles by keyword:', err);
+      res.status(500).json({ error: 'Failed to delete articles by keyword' });
+    }
+  });
+
   // POST /api/articles/:id/ignore - mark article as ignored
   app.post('/api/articles/:id/ignore', async (req: AuthRequest, res: Response) => {
     try {
