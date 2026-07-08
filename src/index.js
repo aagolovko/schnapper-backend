@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv-flow';
 import { OAuth2Client } from 'google-auth-library';
 import { connectToDatabase, getArticlesCollection, getSearchProfilesCollection } from './services/database.service.js';
 import { ObjectId } from 'mongodb';
+import { getCrawlerStatus, triggerCrawlerRun } from './services/crawler-k8s.service.js';
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -346,6 +347,31 @@ async function main() {
         catch (err) {
             console.error('Error deleting search profile:', err);
             res.status(500).json({ error: 'Failed to delete search profile' });
+        }
+    });
+    app.get('/api/crawling/status', async (req, res) => {
+        try {
+            const crawlerStatus = await getCrawlerStatus();
+            res.json(crawlerStatus);
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown crawler status error';
+            console.error('Error fetching crawler status:', err);
+            res.status(503).json({ error: `Failed to fetch crawler status: ${message}` });
+        }
+    });
+    app.post('/api/crawling/run', async (req, res) => {
+        try {
+            if (!req.auth?.isAuthenticated) {
+                return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+            }
+            const runResult = await triggerCrawlerRun();
+            res.status(201).json(runResult);
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : 'Unknown crawler trigger error';
+            console.error('Error starting crawler:', err);
+            res.status(503).json({ error: `Failed to start crawler: ${message}` });
         }
     });
     // Health check
