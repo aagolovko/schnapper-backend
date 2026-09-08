@@ -51,7 +51,7 @@ type Article {
     locationGeocoded: GeoLocation,
     notes: String,
     isFavorite: Boolean,
-    isIgnored: Boolean,
+    isDeleted: Boolean,
     createdOn: Date,
     searchKeywords: [String],
 }

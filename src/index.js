@@ -77,7 +77,7 @@ async function getArticles(bounds) {
     const articlesCollection = getArticlesCollection();
     const filter = {
         $and: [
-            { $nor: [{ isIgnored: true }] },
+            { isDeleted: { $ne: true } },
             { $or: [{ isFavorite: true }, { isFavorite: null }] },
         ],
     };
@@ -228,13 +228,14 @@ async function main() {
                 const updateResult = await getSearchProfilesCollection().updateOne({ _id: profile._id }, { $set: { keywords: nextKeywords } });
                 updatedProfiles += updateResult.modifiedCount;
             }
-            const result = await getArticlesCollection().deleteMany({
+            const result = await getArticlesCollection().updateMany({
                 searchKeywords: keyword,
-            });
+            }, { $set: { isDeleted: true } });
             res.json({
                 keyword,
                 deleted: true,
-                deletedCount: result.deletedCount,
+                deletedCount: result.modifiedCount,
+                matchedCount: result.matchedCount,
                 removedFromProfiles: updatedProfiles,
             });
         }
@@ -250,7 +251,7 @@ async function main() {
                 return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
             }
             console.log(`Mark article as ignored: ${req.params.id}`);
-            const updated = await updateArticle(req.params.id, { $set: { isIgnored: true } });
+            const updated = await updateArticle(req.params.id, { $set: { isDeleted: true } });
             res.json(updated);
         }
         catch (err) {
@@ -258,17 +259,15 @@ async function main() {
             res.status(500).json({ error: 'Failed to update article' });
         }
     });
-    // DELETE /api/articles/:id - remove article from the database
+    // DELETE /api/articles/:id - mark article as deleted
     app.delete('/api/articles/:id', async (req, res) => {
         try {
             if (!req.auth?.isAuthenticated) {
                 return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
             }
-            console.log(`Delete article: ${req.params.id}`);
-            const result = await getArticlesCollection().deleteOne({
-                _id: ObjectId.createFromHexString(req.params.id),
-            });
-            if (!result.deletedCount) {
+            console.log(`Mark article as deleted: ${req.params.id}`);
+            const result = await getArticlesCollection().updateOne({ _id: ObjectId.createFromHexString(req.params.id) }, { $set: { isDeleted: true } });
+            if (!result.matchedCount) {
                 return res.status(404).json({ error: 'Article not found' });
             }
             res.json({ id: req.params.id, deleted: true });

@@ -120,7 +120,7 @@ async function getArticles(bounds?: Bounds) {
   const articlesCollection = getArticlesCollection();
   const filter: any = {
     $and: [
-      { $nor: [{ isIgnored: true }] },
+      { isDeleted: { $ne: true } },
       { $or: [{ isFavorite: true }, { isFavorite: null }] },
     ],
   };
@@ -303,14 +303,15 @@ async function main() {
         updatedProfiles += updateResult.modifiedCount;
       }
 
-      const result = await getArticlesCollection().deleteMany({
+      const result = await getArticlesCollection().updateMany({
         searchKeywords: keyword,
-      });
+      }, { $set: { isDeleted: true } });
 
       res.json({
         keyword,
         deleted: true,
-        deletedCount: result.deletedCount,
+        deletedCount: result.modifiedCount,
+        matchedCount: result.matchedCount,
         removedFromProfiles: updatedProfiles,
       });
     } catch (err) {
@@ -327,7 +328,7 @@ async function main() {
       }
 
       console.log(`Mark article as ignored: ${req.params.id}`);
-      const updated = await updateArticle(req.params.id, { $set: { isIgnored: true } });
+      const updated = await updateArticle(req.params.id, { $set: { isDeleted: true } });
       res.json(updated);
     } catch (err) {
       console.error('Error updating article:', err);
@@ -335,19 +336,20 @@ async function main() {
     }
   });
 
-  // DELETE /api/articles/:id - remove article from the database
+  // DELETE /api/articles/:id - mark article as deleted
   app.delete('/api/articles/:id', async (req: AuthRequest, res: Response) => {
     try {
       if (!req.auth?.isAuthenticated) {
         return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
       }
 
-      console.log(`Delete article: ${req.params.id}`);
-      const result = await getArticlesCollection().deleteOne({
-        _id: ObjectId.createFromHexString(req.params.id),
-      });
+      console.log(`Mark article as deleted: ${req.params.id}`);
+      const result = await getArticlesCollection().updateOne(
+        { _id: ObjectId.createFromHexString(req.params.id) },
+        { $set: { isDeleted: true } },
+      );
 
-      if (!result.deletedCount) {
+      if (!result.matchedCount) {
         return res.status(404).json({ error: 'Article not found' });
       }
 

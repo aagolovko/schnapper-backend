@@ -12,7 +12,7 @@ export interface Article {
     locationGeocoded?: any; // TODO: object has own schema, make sense to use it?
     notes?: string;
     isFavorite?: boolean; // TODO: how to fix? why is it red? default value possible?
-    isIgnored?: boolean;
+    isDeleted?: boolean;
     createdOn: string;
     searchKeywords: string[];
 }
