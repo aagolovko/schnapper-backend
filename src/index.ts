@@ -320,6 +320,26 @@ async function main() {
     }
   });
 
+  // DELETE /api/articles/purge - permanently remove articles which have not been reviewed
+  app.delete('/api/articles/purge', async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.auth?.isAuthenticated) {
+        return res.status(401).json({ error: 'Unauthorized: ' + req.auth?.error });
+      }
+
+      const result = await getArticlesCollection().deleteMany({
+        isFavorite: { $ne: true },
+        isDeleted: { $ne: true },
+      });
+
+      console.log(`Permanently purged ${result.deletedCount} unreviewed articles`);
+      res.json({ deletedCount: result.deletedCount });
+    } catch (err) {
+      console.error('Error purging unreviewed articles:', err);
+      res.status(500).json({ error: 'Failed to purge unreviewed articles' });
+    }
+  });
+
   // POST /api/articles/:id/ignore - mark article as ignored
   app.post('/api/articles/:id/ignore', async (req: AuthRequest, res: Response) => {
     try {
